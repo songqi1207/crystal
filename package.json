@@ -1,0 +1,27 @@
+{
+  "name": "astraya",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Astraya 星脉 — Web3 crystal commerce + master consultation platform",
+  "packageManager": "pnpm@10.33.1",
+  "scripts": {
+    "dev": "pnpm --filter @astraya/web dev",
+    "dev:admin": "pnpm --filter @astraya/admin dev",
+    "build": "pnpm -r --filter=./apps/* build",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @astraya/db generate",
+    "db:push": "pnpm --filter @astraya/db push",
+    "db:seed": "pnpm --filter @astraya/db seed",
+    "db:studio": "pnpm --filter @astraya/db studio",
+    "contracts:compile": "pnpm --filter @astraya/contracts compile",
+    "contracts:test": "pnpm --filter @astraya/contracts test",
+    "contracts:deploy:base-sepolia": "pnpm --filter @astraya/contracts deploy:base-sepolia",
+    "setup": "pnpm install && pnpm db:generate && pnpm db:push && pnpm db:seed"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}

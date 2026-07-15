@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-night-900 text-pearl-200 antialiased min-h-screen;
+    background-image: theme("backgroundImage.starfield");
+    background-attachment: fixed;
+  }
+  h1, h2, h3, h4, h5 {
+    @apply font-serif tracking-wide;
+  }
+  h1 { @apply text-4xl md:text-5xl font-normal text-pearl-100; }
+  h2 { @apply text-3xl md:text-4xl font-normal text-pearl-100; }
+  h3 { @apply text-2xl font-normal text-pearl-100; }
+  a { @apply transition-colors; }
+}
+
+@layer components {
+  .container-astra {
+    @apply mx-auto w-full max-w-7xl px-5 md:px-8;
+  }
+
+  .glass {
+    @apply bg-night-700/60 backdrop-blur-xl border border-night-500/50 rounded-2xl;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border border-night-500/70 bg-night-700/40 text-pearl-300;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-medium
+           bg-starlight-500 text-night-900 hover:bg-starlight-400 transition shadow-glow;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-medium
+           border border-pearl-300/30 text-pearl-200 hover:border-starlight-500 hover:text-starlight-400 transition;
+  }
+  .btn-amethyst {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-medium
+           bg-amethyst-500 text-pearl-100 hover:bg-amethyst-400 transition shadow-glow-amethyst;
+  }
+
+  .hair-line {
+    @apply block h-px w-full bg-gradient-to-r from-transparent via-starlight-500/40 to-transparent;
+  }
+
+  .glyph {
+    background: linear-gradient(135deg, #E8C37A 0%, #9D6FD9 50%, #4F9DDE 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* Star twinkle utility layer */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

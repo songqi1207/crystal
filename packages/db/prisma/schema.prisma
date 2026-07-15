@@ -1,0 +1,225 @@
+// Astraya Prisma schema (Phase 1 — SQLite dev, Postgres prod via DATABASE_URL)
+// Field shapes are chosen so the Phase 2 migration to ERC-721 metadata and
+// on-chain escrow is a pure "fill in tokenId/txHash" operation — no renames.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String    @id @default(cuid())
+  email          String?   @unique
+  phone          String?   @unique
+  name           String?
+  locale         String    @default("zh")
+  role           String    @default("user") // user | master | admin
+  walletAddress  String?   @unique          // populated in Phase 2
+  emailVerified  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  masterProfile  Master?
+  orders         Order[]
+  consultations  Consultation[] @relation("asker")
+  addresses      Address[]
+  certificates   Certificate[]  @relation("owner")
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipient   String
+  phone       String
+  country     String
+  province    String
+  city        String
+  district    String?
+  addressLine String
+  postalCode  String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Masters
+// ---------------------------------------------------------------------------
+
+model Master {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String
+  title          String           // e.g. "紫微斗数 · 九年"
+  avatar         String
+  bio            String
+  specialties    String           // comma-separated tags: "塔罗,紫微斗数,水晶开光"
+  baseFeeCents   Int              // USD cents for async Q&A
+  responseHours  Int      @default(48)
+  rating         Float    @default(5.0)
+  answeredCount  Int      @default(0)
+  published      Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  consultations  Consultation[]   @relation("master")
+  authoredItems  ProductItem[]    @relation("blessed_by")
+}
+
+// ---------------------------------------------------------------------------
+// Crystal catalog (Product = SKU; ProductItem = individual physical piece)
+// ---------------------------------------------------------------------------
+
+model Product {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  nameEn         String
+  tagline        String
+  description    String
+  origin         String           // e.g. "巴西 米纳斯吉拉斯"
+  element        String           // 五行: metal | wood | water | fire | earth
+  chakra         String           // root | sacral | solar | heart | throat | thirdeye | crown
+  category       String           // raw | polished | bracelet | pendant | tower | geode
+  priceCents     Int              // USD cents (overseas edition)
+  priceCnyCents  Int              // CNY cents (mainland edition)
+  images         String           // JSON string array
+  weightGrams    Int
+  stock          Int      @default(0)
+  published      Boolean  @default(true)
+  featured       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  items          ProductItem[]
+  orderLines     OrderItem[]
+}
+
+model ProductItem {
+  id                String    @id @default(cuid())
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id])
+  serialNo          String    @unique           // e.g. AS-25042201-0001
+  nfcUid            String    @unique           // NTAG424 chip UID
+  nfcHash           String                      // sha256(secret + serialNo + nfcUid + ownerId)
+  photoCid          String?                     // unique macro photo reference
+  blessedByMasterId String?
+  blessedByMaster   Master?   @relation("blessed_by", fields: [blessedByMasterId], references: [id])
+  blessedAt         DateTime?
+  status            String    @default("in_stock") // in_stock | reserved | sold | shipped | delivered | redeemed
+  createdAt         DateTime  @default(now())
+
+  orderLines        OrderItem[]
+  certificate       Certificate?
+}
+
+// ---------------------------------------------------------------------------
+// Orders & shipping — cart-style with OrderItem line items
+// ---------------------------------------------------------------------------
+
+model Order {
+  id              String    @id @default(cuid())
+  code            String    @unique           // human-friendly ASTR-YYYYMMDD-XXXX
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  email           String                      // snapshot for guest-friendly lookup
+  subtotalCents   Int
+  shippingCents   Int       @default(0)
+  totalCents      Int
+  currency        String    @default("USD")   // USD | CNY | USDC (phase 2)
+  shippingAddress String                      // plain-text snapshot (structured Address via Address model)
+  paymentMethod   String    @default("mock")  // stripe | wechat | alipay | usdc | mock
+  paymentStatus   String    @default("pending") // pending | succeeded | failed | refunded
+  externalId      String?                     // Stripe session / WeChat prepay id / tx hash
+  status          String    @default("pending") // pending | paid | shipped | delivered | cancelled | refunded
+  trackingNo      String?
+  carrier         String?
+  paidAt          DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  items           OrderItem[]
+}
+
+model OrderItem {
+  id              String       @id @default(cuid())
+  orderId         String
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id])
+  itemId          String?                      // ProductItem binding (null = virtual / stockless line)
+  item            ProductItem? @relation(fields: [itemId], references: [id])
+  quantity        Int
+  unitPriceCents  Int
+  createdAt       DateTime     @default(now())
+
+  certificate     Certificate?
+}
+
+// ---------------------------------------------------------------------------
+// Certificates (Phase 1: PDF + HMAC; Phase 2: mint ERC-721 and fill tokenId)
+// A Certificate is always linked to EITHER an OrderItem (product cert) OR a
+// Consultation (divination cert) — never both.
+// ---------------------------------------------------------------------------
+
+model Certificate {
+  id              String        @id @default(cuid())
+  kind            String        @default("product") // product | consultation
+  code            String        @unique             // short scan/verify code used in NFC URL
+  userId          String
+  user            User          @relation("owner", fields: [userId], references: [id])
+  orderItemId     String?       @unique
+  orderItem       OrderItem?    @relation(fields: [orderItemId], references: [id])
+  consultationId  String?       @unique
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  itemId          String?       @unique             // direct ProductItem link for /verify flows
+  item            ProductItem?  @relation(fields: [itemId], references: [id])
+  payload         String                            // canonical JSON mirroring ERC-721 metadata
+  pdfUrl          String?
+  integrityHash   String                            // sha256(payload)
+  signature       String                            // HMAC-SHA256(integrityHash, ASTRAYA_SIGNING_SECRET)
+  tokenId         String?                           // Phase 2: set once minted on Base
+  txHash          String?
+  chainId         Int?
+  contractAddress String?                           // Phase 2: 0x… of AstrayaCertificate721/Divination721
+  mintedAt        DateTime?                         // Phase 2: wall clock at mint
+  createdAt       DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Master consultations (async paid Q&A)
+// ---------------------------------------------------------------------------
+
+model Consultation {
+  id              String    @id @default(cuid())
+  code            String    @unique               // ASK-YYYYMMDD-XXXX
+  userId          String
+  user            User      @relation("asker", fields: [userId], references: [id])
+  masterId        String
+  master          Master    @relation("master", fields: [masterId], references: [id])
+  feeCents        Int
+  currency        String    @default("USD")
+  paymentMethod   String    @default("mock")
+  paymentStatus   String    @default("pending")
+  externalId      String?
+  topic           String                           // career | love | wealth | health | study | timing
+  question        String                           // encrypted in prod, plain in dev
+  birthInfo       String?
+  answer          String?
+  answeredAt      DateTime?
+  status          String    @default("pending")   // pending | answered | refunded | expired
+  deadlineAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  certificate     Certificate?
+}
