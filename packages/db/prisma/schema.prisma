@@ -21,9 +21,11 @@ model User {
   phone          String?   @unique
   name           String?
   locale         String    @default("zh")
-  role           String    @default("user") // user | master | admin
+  role           String    @default("user") // user | master | super_admin
   walletAddress  String?   @unique          // populated in Phase 2
   emailVerified  DateTime?
+  mfaSecretEncrypted String?
+  mfaEnabledAt   DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -32,6 +34,39 @@ model User {
   consultations  Consultation[] @relation("asker")
   addresses      Address[]
   certificates   Certificate[]  @relation("owner")
+  sessions       UserSession[]
+}
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+model EmailLoginCode {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+}
+
+model UserSession {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  mfaVerifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Address {

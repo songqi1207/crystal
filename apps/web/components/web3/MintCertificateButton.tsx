@@ -21,8 +21,6 @@ export type MintedInfo = {
 type Props = {
   /** Certificate row id (Certificate.id in the DB). */
   certificateId: string;
-  /** Email used for ownership check on the server. */
-  email: string;
   /** Whether Web3 is globally enabled (NEXT_PUBLIC_ENABLE_WEB3). */
   enabled: boolean;
   /** Pre-existing on-chain state loaded from the server. */
@@ -62,7 +60,6 @@ function shortHash(h: string, head = 8, tail = 6): string {
 
 export function MintCertificateButton({
   certificateId,
-  email,
   enabled,
   initialMinted,
   compact,
@@ -73,10 +70,6 @@ export function MintCertificateButton({
   );
 
   async function mint() {
-    if (!email) {
-      setState({ kind: "error", message: "请先在 /my 输入邮箱并查询到此证书" });
-      return;
-    }
     setState({ kind: "minting" });
     try {
       const resp = await fetch(
@@ -84,7 +77,7 @@ export function MintCertificateButton({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({}),
         },
       );
       const json = await resp.json().catch(() => ({}));
@@ -166,7 +159,7 @@ export function MintCertificateButton({
             ? "inline-flex items-center gap-2 rounded-full border border-starlight-500/40 bg-starlight-500/10 px-3 py-1.5 text-xs text-starlight-200 hover:bg-starlight-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
             : "btn-primary"
         }
-        disabled={minting || !email}
+        disabled={minting}
         onClick={mint}
       >
         {minting ? (
@@ -190,11 +183,6 @@ export function MintCertificateButton({
         </div>
       )}
 
-      {!email && state.kind === "idle" && !compact && (
-        <div className="text-xs text-pearl-500">
-          需要先在 `/my` 输入并查询到此证书对应的邮箱。
-        </div>
-      )}
     </div>
   );
 }

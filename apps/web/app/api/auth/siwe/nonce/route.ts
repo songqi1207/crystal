@@ -4,6 +4,7 @@ import {
   issueNonce,
 } from "@/lib/siwe-nonce";
 import { isWeb3Enabled } from "@/lib/web3-chains";
+import { getCurrentUser } from "@/lib/auth";
 
 /**
  * GET /api/auth/siwe/nonce
@@ -19,6 +20,10 @@ export async function GET() {
       { error: "web3_disabled" },
       { status: 403 },
     );
+  }
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
 
   const { nonce, cookieValue, maxAgeSec } = issueNonce();

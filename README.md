@@ -44,8 +44,9 @@ crystal/
 # 1. 克隆并安装依赖
 pnpm install
 
-# 2. 准备 Prisma（SQLite 演示库，零外部依赖）
+# 2. 准备环境与 Prisma（SQLite 演示库，零外部依赖）
 cp apps/web/.env.example apps/web/.env
+cp packages/db/.env.example packages/db/.env
 pnpm db:generate
 pnpm db:push
 pnpm db:seed
@@ -55,6 +56,33 @@ pnpm dev
 # 打开 http://localhost:3000
 ```
 
+首次进入 `/login`，输入邮箱获取一次性验证码。邮件默认通过 Resend
+真实投递；本地需要先按下方“登录验证码邮件”配置密钥。演示账户包括：
+
+- `demo@astraya.dev`：普通用户
+- `master.ziwei@astraya.dev`：大师
+- `admin@astraya.dev`：超级管理员
+
+超级管理员首次登录会被强制进入 `/mfa/setup`，需在身份验证器中保存 TOTP 密钥并完成一次验证；后续每个新 Session 都必须通过 `/mfa/verify` 才能访问运营台或执行敏感操作。开发环境执行 `pnpm db:seed` 会重置演示管理员及其 MFA。
+
+### 登录验证码邮件
+
+开发和生产环境默认都执行真实邮件投递，不会把验证码返回给浏览器：
+
+1. 在 Resend 创建 API Key。
+2. 添加你拥有的域名或邮件子域名，并按控制台提示配置 SPF、DKIM。
+3. 在 `apps/web/.env` 配置：
+
+   ```env
+   ASTRAYA_EMAIL_MODE="resend"
+   RESEND_API_KEY="re_xxxxxxxxx"
+   ASTRAYA_EMAIL_FROM="Astraya <login@send.example.com>"
+   ```
+
+4. 重启 `pnpm dev` 后再申请验证码。
+
+只有离线调试时才设置 `ASTRAYA_EMAIL_MODE="console"`。该模式会在开发页面显示验证码，并且在生产环境被拒绝。
+
 ### 主要脚本
 
 | 脚本 | 说明 |
@@ -63,7 +91,7 @@ pnpm dev
 | `pnpm build` | 生产构建 |
 | `pnpm db:generate` | 生成 Prisma Client |
 | `pnpm db:push` | 将 schema 写入 SQLite |
-| `pnpm db:seed` | 植入 6 款水晶 + 12 件实体 + 4 位大师的演示数据 |
+| `pnpm db:seed` | 植入 6 款水晶 + 12 件实体 + 3 位大师 + 1 位管理员的演示数据 |
 | `pnpm db:studio` | 打开 Prisma Studio |
 | `pnpm contracts:compile` | 编译 Phase 2 Solidity 合约（`packages/contracts`） |
 | `pnpm contracts:test` | 跑 Hardhat 单测（纯内存链，无需 RPC） |
@@ -72,19 +100,11 @@ pnpm dev
 ## 核心体验流程
 
 1. **逛水晶**：首页 → `/products` → 点开 `紫水晶洞 · 巴西` → 查看可选实体与证书说明。
-2. **下单**：`加入购物袋` → `/cart` 填邮箱+地址 → `确认下单（模拟支付）`。下单成功后，一枚 `CrystalItem` 被锁定为 `sold`，自动生成含 NFC 哈希与 HMAC 签名的 `Certificate`。
-3. **查看法器**：`/my` 输入邮箱 → 订单列表 → 详情页展示可打印的证书视图。
-4. **向大师问卜**：`/consult` → 选大师 → `/consult/:id/ask` 提交问题。默认状态为 `pending`，等待管理员调用 `POST /api/admin/consultations/:id/answer`（`Authorization: Bearer ASTRAYA_ADMIN_TOKEN`）写入答复，系统会生成一枚卦象证书。
-5. **扫码验真**：`/verify` 输入 `nfc-amethyst-geode-brazil-001` 等演示 UID，校验实体是否由 Astraya 官方发行。
-
-### 向 `pending` 咨询写入答复（示例）
-
-```bash
-curl -X POST http://localhost:3000/api/admin/consultations/<id>/answer \
-  -H "Authorization: Bearer $ASTRAYA_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"answer": "观紫微斗数，命主近期…（≥20 字）"}'
-```
+2. **登录**：`/login` 输入邮箱和一次性验证码，服务器创建 HttpOnly Session。
+3. **下单**：`加入购物袋` → `/cart` 填地址 → `确认下单（模拟支付）`。下单成功后，一枚 `CrystalItem` 被锁定为 `sold`，自动生成含 NFC 哈希与 HMAC 签名的 `Certificate`。
+4. **查看法器**：`/my` 仅展示当前登录用户的订单、咨询与证书。
+5. **向大师问卜**：`/consult` → 选大师 → `/consult/:id/ask` 提交问题。大师登录 `/console` 后处理分配给自己的咨询。
+6. **扫码验真**：`/verify` 输入种子数据中的 NFC UID，校验实体是否由 Astraya 官方发行。
 
 ## 路线图
 
@@ -97,7 +117,7 @@ curl -X POST http://localhost:3000/api/admin/consultations/<id>/answer \
 ### Phase 2 里程碑
 
 - **M1 · 合约 + 单测** ✅ — `AstrayaCertificate721` / `AstrayaDivination721` (OZ v5 ERC-721 + ERC-2981 + AccessControl)，duplicate-hash 防重铸，17 项 Hardhat 测试全绿。详见 [`packages/contracts/README.md`](./packages/contracts/README.md)。
-- **M2 · 钱包登录** ✅ — RainbowKit v2 + wagmi v2 + SIWE；`/my` 页支持连接 MetaMask / Coinbase Wallet / WalletConnect，签名后 `POST /api/auth/siwe/verify` 把钱包写入 `User.walletAddress`。细节见下方「启用钱包登录」章节。
+- **M2 · 钱包绑定** ✅ — 邮箱验证码建立账户 Session；RainbowKit v2 + wagmi v2 + SIWE 只负责证明钱包归属，并把钱包安全绑定到当前已登录用户。细节见下方「启用钱包登录」章节。
 - **M3 · 证书回铸** ✅ — `/my/orders/[code]` 与 `/my/consultations/[id]` 均带 "铸造为链上 NFT" 按钮，后端 `POST /api/certificates/:id/mint` 通过 `ASTRAYA_MINTER_PRIVATE_KEY` 调用合约，把 NFT 发给绑定的 `User.walletAddress`，并回写 `tokenId`/`txHash`/`contractAddress`/`chainId`/`mintedAt`；`/api/cert/[code]` 作为 ERC-721 `tokenURI` 返回 OpenSea 兼容的元数据；`/verify` 展示 tokenId + BaseScan 链接。详见下方「启用链上铸造」章节。
 - **M4 · USDC 结账** ⏳ — `/cart` 增加 Base Sepolia USDC 付款路径，链上事件 observer 驱动订单状态。
 
@@ -121,7 +141,7 @@ curl -X POST http://localhost:3000/api/admin/consultations/<id>/answer \
    - 用 `siwe` 库拼装 SIWE 消息 → 钱包签名。
    - `POST /api/auth/siwe/verify` 校验签名 + nonce + chainId → 写入 `User.walletAddress`。
 
-5. 刷新后，`GET /api/my/wallet?email=...` 会返回绑定的地址，面板显示 BaseScan 链接。
+5. 刷新后，登录态下的 `GET /api/my/wallet` 会返回当前账户绑定的地址，面板显示 BaseScan 链接。
 
 > 若 `NEXT_PUBLIC_ENABLE_WEB3` 仍为 `"false"`，`/my` 只渲染预告卡片，不加载任何 wagmi/RainbowKit bundle，Phase 1 体验零影响。
 

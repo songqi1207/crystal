@@ -7,11 +7,11 @@ import {
   verifyNonce,
 } from "@/lib/siwe-nonce";
 import { getAstrayaChain, isWeb3Enabled } from "@/lib/web3-chains";
+import { getCurrentUser } from "@/lib/auth";
 
 const bodySchema = z.object({
   message: z.string().min(1).max(4000),
   signature: z.string().min(1).max(512),
-  email: z.string().email(),
 });
 
 /**
@@ -19,7 +19,7 @@ const bodySchema = z.object({
  *
  * Consumes a SIWE message + signature, validates both the server-issued
  * nonce cookie and the cryptographic signature, then binds the recovered
- * wallet address to the user identified by `email`.
+ * wallet address to the already-authenticated user.
  *
  * Response (200):   { ok: true, walletAddress }
  * Response (400):   { ok: false, error: string, detail?: string }
@@ -31,6 +31,10 @@ export async function POST(req: Request) {
       { status: 403 },
     );
   }
+  const authUser = await getCurrentUser();
+  if (!authUser) {
+    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
+  }
 
   const raw = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(raw);
@@ -40,7 +44,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { message, signature, email } = parsed.data;
+  const { message, signature } = parsed.data;
 
   // 1. Parse the SIWE message first — if it's malformed we can fail cheap
   //    before touching the DB or the cookie.
@@ -121,33 +125,18 @@ export async function POST(req: Request) {
   const existingByWallet = await prisma.user.findUnique({
     where: { walletAddress: wallet },
   });
-  const existingByEmail = await prisma.user.findUnique({ where: { email } });
-
-  if (
-    existingByWallet &&
-    existingByEmail &&
-    existingByWallet.id !== existingByEmail.id
-  ) {
+  if (existingByWallet && existingByWallet.id !== authUser.id) {
     return NextResponse.json(
       { ok: false, error: "wallet_bound_to_other_account" },
       { status: 409 },
     );
   }
-  if (existingByWallet && !existingByEmail) {
-    // Wallet was previously bound to an anonymous account — reject to keep
-    // the email↔wallet mapping strictly bijective per user.
-    return NextResponse.json(
-      { ok: false, error: "wallet_bound_to_other_account" },
-      { status: 409 },
-    );
-  }
-
-  // 6. Upsert: create the user if this is their first visit, otherwise
-  //    patch the walletAddress onto the existing record.
-  const saved = await prisma.user.upsert({
-    where: { email },
-    update: { walletAddress: wallet },
-    create: { email, walletAddress: wallet },
+  // 6. Bind only to the already-authenticated account. Email ownership was
+  //    established before SIWE, so a wallet signature cannot claim an
+  //    arbitrary victim email.
+  const saved = await prisma.user.update({
+    where: { id: authUser.id },
+    data: { walletAddress: wallet },
     select: { email: true, walletAddress: true },
   });
 

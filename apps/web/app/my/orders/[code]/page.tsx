@@ -6,10 +6,16 @@ import { CertificateViewer } from "@/components/certificate-viewer";
 import { MintCertificateBlock } from "@/components/web3/MintCertificateBlock";
 import { isWeb3Enabled, explorerTxUrl } from "@/lib/web3-chains";
 import type { MintedInfo } from "@/components/web3/MintCertificateButton";
+import { getCurrentUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default async function OrderDetailPage({ params }: { params: { code: string } }) {
-  const order = await prisma.order.findUnique({
-    where: { code: params.code },
+  const user = await getCurrentUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/my/orders/${params.code}`)}`);
+  const order = await prisma.order.findFirst({
+    where: { code: params.code, userId: user.id },
     include: {
       items: { include: { product: true, item: true, certificate: true } },
     },

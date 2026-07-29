@@ -8,15 +8,39 @@ import {
 } from "@astraya/shared";
 import { sha256Hex } from "@astraya/shared/hash";
 import { buildCertificate } from "@/lib/certificates";
+import { getCurrentUser } from "@/lib/auth";
+
+const shippingAddressSchema = z.object({
+  recipient: z.string().trim().min(2).max(100),
+  phone: z.string().trim().min(5).max(30),
+  countryCode: z.string().trim().regex(/^[A-Z]{2}$/),
+  country: z.string().trim().min(1).max(100),
+  province: z.string().trim().max(100),
+  city: z.string().trim().min(1).max(100),
+  district: z.string().trim().max(100),
+  addressLine: z.string().trim().min(3).max(500),
+  postalCode: z.string().trim().max(30),
+});
 
 const createOrderSchema = z.object({
-  email: z.string().email(),
-  shippingAddress: z.string().min(10).max(2000),
+  shippingAddress: shippingAddressSchema,
   items: z
     .array(z.object({ slug: z.string().min(1), quantity: z.number().int().positive().max(20) }))
     .min(1)
     .max(20),
 });
+
+function addressSnapshot(address: z.infer<typeof shippingAddressSchema>): string {
+  const region = [address.country, address.province, address.city, address.district]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    `${address.recipient} · ${address.phone}`,
+    region,
+    address.addressLine,
+    address.postalCode ? `邮编 ${address.postalCode}` : "",
+  ].filter(Boolean).join("\n");
+}
 
 function genCode() {
   // e.g. ASTR-20260422-AB12
@@ -26,11 +50,9 @@ function genCode() {
   return `${ORDER_CODE_PREFIX}-${ymd}-${suffix}`;
 }
 
-export async function GET(req: Request) {
-  const email = new URL(req.url).searchParams.get("email")?.trim();
-  if (!email) return NextResponse.json({ items: [] });
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return NextResponse.json({ items: [] });
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const orders = await prisma.order.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -49,12 +71,15 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authUser = await getCurrentUser();
+  if (!authUser) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const json = await req.json().catch(() => null);
   const parsed = createOrderSchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
-  const { email, shippingAddress, items } = parsed.data;
+  const { shippingAddress, items } = parsed.data;
+  const email = authUser.email;
 
   const products = await prisma.product.findMany({
     where: { slug: { in: items.map((i) => i.slug) }, published: true },
@@ -111,10 +136,25 @@ export async function POST(req: Request) {
   const code = genCode();
 
   const order = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
-      where: { email },
-      update: {},
-      create: { email },
+    const user = await tx.user.findUniqueOrThrow({ where: { id: authUser.id } });
+
+    await tx.address.updateMany({
+      where: { userId: user.id, isDefault: true },
+      data: { isDefault: false },
+    });
+    await tx.address.create({
+      data: {
+        userId: user.id,
+        recipient: shippingAddress.recipient,
+        phone: shippingAddress.phone,
+        country: shippingAddress.country,
+        province: shippingAddress.province,
+        city: shippingAddress.city,
+        district: shippingAddress.district || null,
+        addressLine: shippingAddress.addressLine,
+        postalCode: shippingAddress.postalCode || null,
+        isDefault: true,
+      },
     });
 
     const created = await tx.order.create({
@@ -122,7 +162,7 @@ export async function POST(req: Request) {
         code,
         userId: user.id,
         email,
-        shippingAddress,
+        shippingAddress: addressSnapshot(shippingAddress),
         subtotalCents: subtotal,
         shippingCents,
         totalCents: total,

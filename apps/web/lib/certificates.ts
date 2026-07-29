@@ -9,7 +9,12 @@ import { sha256Hex } from "@astraya/shared/hash";
  */
 
 function getSecret(): string {
-  return process.env.ASTRAYA_SIGNING_SECRET || "astraya-dev-secret-change-me";
+  const configured = (process.env.ASTRAYA_SIGNING_SECRET ?? "").trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("ASTRAYA_SIGNING_SECRET must be configured in production");
+  }
+  return "astraya-dev-secret-change-me";
 }
 
 export function canonicalize(payload: CertificatePayload): string {
@@ -38,5 +43,6 @@ export function verifySignature(integrityHash: string, signature: string) {
     .createHmac("sha256", getSecret())
     .update(integrityHash)
     .digest("hex");
+  if (expected.length !== signature.length) return false;
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }

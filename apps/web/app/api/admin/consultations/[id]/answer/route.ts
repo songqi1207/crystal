@@ -3,27 +3,28 @@ import { z } from "zod";
 import { prisma } from "@astraya/db";
 import type { CertificatePayload } from "@astraya/shared";
 import { buildCertificate } from "@/lib/certificates";
+import { getCurrentSession, hasRole } from "@/lib/auth";
 
 /**
- * Admin endpoint: used by the Astraya operations console (not yet shipped as UI)
- * or by a master to submit their answer. Protected by a shared bearer token
- * defined in `ASTRAYA_ADMIN_TOKEN`.
+ * Answer endpoint for the operations console. A master may answer only their
+ * own assigned consultation; a super administrator may answer any.
  */
 
 const schema = z.object({
   answer: z.string().min(20).max(5000),
 });
 
-function authorized(req: Request) {
-  const expected = process.env.ASTRAYA_ADMIN_TOKEN;
-  if (!expected) return false;
-  const header = req.headers.get("authorization") || "";
-  return header === `Bearer ${expected}`;
-}
-
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  if (!authorized(req)) {
+  const session = await getCurrentSession();
+  if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const authUser = session.user;
+  if (!hasRole(authUser, "master")) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  if (authUser.role === "super_admin" && !authUser.mfaVerified) {
+    return NextResponse.json({ error: "mfa_required" }, { status: 403 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid payload" }, { status: 400 });
@@ -33,6 +34,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     include: { master: true, user: true },
   });
   if (!c) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!hasRole(authUser, "super_admin") && c.master.userId !== authUser.id) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   if (c.status !== "pending") {
     return NextResponse.json({ error: "already answered" }, { status: 409 });
   }

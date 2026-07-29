@@ -41,7 +41,7 @@ type BindState =
   | { kind: "error"; message: string }
   | { kind: "success"; walletAddress: string };
 
-export function WalletBindCard({ email }: { email: string }) {
+export function WalletBindCard() {
   const { address, isConnected } = useAccount();
   const currentChainId = useChainId();
   const { switchChainAsync, isPending: isSwitching } = useSwitchChain();
@@ -55,14 +55,9 @@ export function WalletBindCard({ email }: { email: string }) {
   const wrongChain = isConnected && currentChainId !== expectedId;
 
   const refreshBound = useCallback(async () => {
-    if (!email) {
-      setBound(null);
-      setLoadingBound(false);
-      return;
-    }
     setLoadingBound(true);
     try {
-      const r = await fetch(`/api/my/wallet?email=${encodeURIComponent(email)}`);
+      const r = await fetch("/api/my/wallet");
       const json = await r.json();
       setBound(json.walletAddress ?? null);
     } catch {
@@ -70,7 +65,7 @@ export function WalletBindCard({ email }: { email: string }) {
     } finally {
       setLoadingBound(false);
     }
-  }, [email]);
+  }, []);
 
   useEffect(() => {
     refreshBound();
@@ -80,7 +75,7 @@ export function WalletBindCard({ email }: { email: string }) {
     bound && address && bound.toLowerCase() === address.toLowerCase();
 
   const bind = useCallback(async () => {
-    if (!address || !email) return;
+    if (!address) return;
 
     if (wrongChain) {
       setState({
@@ -108,7 +103,7 @@ export function WalletBindCard({ email }: { email: string }) {
       const message = new SiweMessage({
         domain,
         address,
-        statement: `Bind this wallet to your Astraya account (${email}).`,
+        statement: "Bind this wallet to your verified Astraya account.",
         uri: origin,
         version: "1",
         chainId: expectedId,
@@ -127,7 +122,7 @@ export function WalletBindCard({ email }: { email: string }) {
       const verifyResp = await fetch("/api/auth/siwe/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, signature, email }),
+        body: JSON.stringify({ message, signature }),
       });
       const verifyJson = await verifyResp.json();
       if (!verifyResp.ok || !verifyJson.ok) {
@@ -143,7 +138,7 @@ export function WalletBindCard({ email }: { email: string }) {
           : ((err as Error)?.message ?? "绑定失败");
       setState({ kind: "error", message });
     }
-  }, [address, email, expectedId, signMessageAsync, wrongChain]);
+  }, [address, expectedId, signMessageAsync, wrongChain]);
 
   return (
     <section className="glass p-6">
@@ -223,7 +218,6 @@ export function WalletBindCard({ email }: { email: string }) {
               type="button"
               className="btn-primary"
               disabled={
-                !email ||
                 state.kind === "signing" ||
                 state.kind === "verifying" ||
                 !!alreadyBoundToThisWallet
@@ -243,7 +237,7 @@ export function WalletBindCard({ email }: { email: string }) {
                     ? "服务器验证中…"
                     : bound
                       ? "改绑到此钱包"
-                      : `签名并绑定到 ${email}`}
+                      : "签名并绑定到当前账户"}
             </button>
             {state.kind === "error" && (
               <div className="text-sm text-red-300">× {state.message}</div>
@@ -256,12 +250,6 @@ export function WalletBindCard({ email }: { email: string }) {
           </div>
         )}
 
-        {/* Email prompt */}
-        {!email && (
-          <div className="text-xs text-pearl-500">
-            先在上方输入邮箱并查询，才能把钱包绑定到对应账户。
-          </div>
-        )}
       </div>
     </section>
   );

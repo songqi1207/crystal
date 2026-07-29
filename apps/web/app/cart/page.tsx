@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Gem, Trash2, ShieldCheck, Loader2 } from "lucide-react";
 import { formatMoney } from "@astraya/shared";
 import { crystalSvgDataUri } from "@/lib/images";
+import { EMPTY_SHIPPING_ADDRESS, ShippingAddressForm, type ShippingAddressValue } from "@/components/shipping-address-form";
 
 type CartLine = {
   slug: string;
@@ -19,8 +20,8 @@ const STORAGE_KEY = "astraya.cart.v1";
 export default function CartPage() {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [address, setAddress] = useState<ShippingAddressValue>(EMPTY_SHIPPING_ADDRESS);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +58,10 @@ export default function CartPage() {
         });
     }
     setHydrated(true);
+    fetch("/api/auth/session")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => setAccountEmail(body?.user?.email ?? null))
+      .catch(() => setAccountEmail(null));
   }, []);
 
   useEffect(() => {
@@ -80,19 +85,27 @@ export default function CartPage() {
   async function checkout() {
     setError(null);
     if (lines.length === 0) return;
-    if (!email.includes("@")) return setError("请填写接收订单与证书的邮箱。");
-    if (address.trim().length < 10) return setError("请填写完整的收件地址（至少 10 个字符）。");
+    if (!accountEmail) {
+      window.location.href = "/login?next=/cart";
+      return;
+    }
+    if (!address.recipient.trim() || !address.phone.trim() || !address.country || !address.city.trim() || !address.addressLine.trim()) {
+      return setError("请填写收件人、联系电话、国家、城市和街道门牌信息。");
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
           shippingAddress: address,
           items: lines.map((l) => ({ slug: l.slug, quantity: l.quantity })),
         }),
       });
+      if (res.status === 401) {
+        window.location.href = "/login?next=/cart";
+        return;
+      }
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(j.error || "下单失败");
@@ -183,18 +196,10 @@ export default function CartPage() {
           </div>
 
           <div className="mt-6 space-y-3">
-            <input
-              className="input"
-              placeholder="邮箱 you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <textarea
-              className="input min-h-[110px]"
-              placeholder="完整收件地址（姓名、电话、国家、详细地址）"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
+            <div className="rounded-xl border border-pearl-400/20 bg-night-800/60 px-4 py-3 text-sm text-pearl-300">
+              {accountEmail ? `订单账户：${accountEmail}` : "结算前需要登录已验证邮箱"}
+            </div>
+            <ShippingAddressForm value={address} onChange={setAddress} />
           </div>
 
           {error && (

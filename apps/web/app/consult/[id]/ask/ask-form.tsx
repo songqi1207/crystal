@@ -18,7 +18,6 @@ export function AskForm({
   const [topic, setTopic] = useState<string>("career");
   const [question, setQuestion] = useState("");
   const [birthInfo, setBirthInfo] = useState("");
-  const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,10 +26,6 @@ export function AskForm({
     setError(null);
     if (question.trim().length < 20) {
       setError("请至少用 20 个字描述你的困惑，便于大师更准确解读。");
-      return;
-    }
-    if (!email.includes("@")) {
-      setError("请填写正确的邮箱，解答生成后会通过邮件通知。");
       return;
     }
     setSubmitting(true);
@@ -43,9 +38,12 @@ export function AskForm({
           topic,
           question: question.trim(),
           birthInfo: birthInfo.trim() || null,
-          email: email.trim(),
         }),
       });
+      if (res.status === 401) {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(j.error || "提交失败");
@@ -101,15 +99,9 @@ export function AskForm({
         <div className="mt-2 text-right text-xs text-pearl-400">{question.length} / 2000</div>
       </Field>
 
-      <Field label="接收解答的邮箱">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          className="input"
-        />
-      </Field>
+      <div className="rounded-xl border border-pearl-400/20 bg-night-800/60 px-4 py-3 text-sm text-pearl-300">
+        解答将保存到当前登录账户；未登录时提交会先跳转到邮箱验证。
+      </div>
 
       {error && (
         <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">

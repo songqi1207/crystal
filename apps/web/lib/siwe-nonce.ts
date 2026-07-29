@@ -24,7 +24,12 @@ export const SIWE_NONCE_TTL_SEC = 10 * 60; // 10 min
 const NONCE_BYTES = 8;
 
 function secret(): string {
-  return process.env.ASTRAYA_SIGNING_SECRET || "astraya-dev-secret-change-me";
+  const configured = (process.env.ASTRAYA_SIGNING_SECRET ?? "").trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("ASTRAYA_SIGNING_SECRET must be configured in production");
+  }
+  return "astraya-dev-secret-change-me";
 }
 
 function hmac(data: string): string {

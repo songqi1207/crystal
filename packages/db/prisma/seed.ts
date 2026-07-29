@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 
+process.env.DATABASE_URL ??= "file:./dev.db";
+
 const prisma = new PrismaClient();
 
 const CERT_SECRET =
@@ -192,6 +194,8 @@ async function main() {
 
   // Wipe in FK-safe order (dev only)
   await prisma.certificate.deleteMany();
+  await prisma.userSession.deleteMany();
+  await prisma.emailLoginCode.deleteMany();
   await prisma.order.deleteMany();
   await prisma.productItem.deleteMany();
   await prisma.product.deleteMany();
@@ -207,6 +211,7 @@ async function main() {
       name: "Demo Seeker",
       locale: "zh",
       role: "user",
+      emailVerified: new Date(),
     },
   });
 
@@ -218,6 +223,7 @@ async function main() {
         email: m.email,
         name: m.displayName,
         role: "master",
+        emailVerified: new Date(),
         locale: "zh",
       },
     });
@@ -237,6 +243,16 @@ async function main() {
     });
     createdMasters.push(master);
   }
+
+  await prisma.user.create({
+    data: {
+      email: "admin@astraya.dev",
+      name: "Astraya Admin",
+      role: "super_admin",
+      locale: "zh",
+      emailVerified: new Date(),
+    },
+  });
 
   // Products + per-piece items
   const batch = new Date().toISOString().slice(2, 10).replace(/-/g, ""); // YYMMDD

@@ -6,14 +6,20 @@ import { masterSvgDataUri } from "@/lib/images";
 import { MintCertificateBlock } from "@/components/web3/MintCertificateBlock";
 import type { MintedInfo } from "@/components/web3/MintCertificateButton";
 import { isWeb3Enabled, explorerTxUrl } from "@/lib/web3-chains";
+import { getCurrentUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 export default async function ConsultationDetailPage({
   params,
 }: {
   params: { id: string };
 }) {
-  const c = await prisma.consultation.findUnique({
-    where: { id: params.id },
+  const user = await getCurrentUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(`/my/consultations/${params.id}`)}`);
+  const c = await prisma.consultation.findFirst({
+    where: { id: params.id, userId: user.id },
     include: { master: true, certificate: true },
   });
   if (!c) notFound();

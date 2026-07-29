@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@astraya/db";
 import { CONSULTATION_CODE_PREFIX, DIVINATION_TOPICS } from "@astraya/shared";
+import { getCurrentUser } from "@/lib/auth";
 
 const TOPICS = DIVINATION_TOPICS.map((t) => t.key) as [string, ...string[]];
 
@@ -17,14 +18,11 @@ const createConsultationSchema = z.object({
   topic: z.enum(TOPICS),
   question: z.string().min(20).max(2000),
   birthInfo: z.string().max(500).nullable().optional(),
-  email: z.string().email(),
 });
 
-export async function GET(req: Request) {
-  const email = new URL(req.url).searchParams.get("email")?.trim();
-  if (!email) return NextResponse.json({ items: [] });
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return NextResponse.json({ items: [] });
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const list = await prisma.consultation.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -43,12 +41,14 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authUser = await getCurrentUser();
+  if (!authUser) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const body = await req.json().catch(() => null);
   const parsed = createConsultationSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
-  const { masterId, topic, question, birthInfo, email } = parsed.data;
+  const { masterId, topic, question, birthInfo } = parsed.data;
 
   const master = await prisma.master.findUnique({ where: { id: masterId } });
   if (!master || !master.published) {
@@ -56,16 +56,10 @@ export async function POST(req: Request) {
   }
 
   const c = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
-      where: { email },
-      update: {},
-      create: { email },
-    });
-
     return tx.consultation.create({
       data: {
         code: genConsultationCode(),
-        userId: user.id,
+        userId: authUser.id,
         masterId,
         topic,
         question,

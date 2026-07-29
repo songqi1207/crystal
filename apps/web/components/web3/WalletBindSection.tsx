@@ -21,7 +21,7 @@ const LazyPanel = dynamic(() => import("./WalletBindMounted"), {
   ),
 });
 
-export function WalletBindSection({ email }: { email: string }) {
+export function WalletBindSection() {
   const enabled =
     (process.env.NEXT_PUBLIC_ENABLE_WEB3 ?? "").toLowerCase() === "true";
 
@@ -41,5 +41,5 @@ export function WalletBindSection({ email }: { email: string }) {
     );
   }
 
-  return <LazyPanel email={email} />;
+  return <LazyPanel />;
 }

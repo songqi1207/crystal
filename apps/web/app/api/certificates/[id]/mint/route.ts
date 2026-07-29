@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@astraya/db";
 import type { Address } from "viem";
 import { getAddress } from "viem";
@@ -9,14 +8,13 @@ import {
   mintCertificate,
   MintConfigError,
 } from "@/lib/mint";
+import { getCurrentUser } from "@/lib/auth";
 
 /**
  * POST /api/certificates/[id]/mint
  *
- * Body: { email: string }
- *   (Phase 1 uses email as the login surface; the Certificate must belong to
- *   the user identified by this email, and that user must have a wallet
- *   bound via SIWE on /my.)
+ * Requires an authenticated session. The Certificate must belong to the
+ * current user, who must have a wallet bound via SIWE on /my.
  *
  * Response:
  *   200 { ok: true, tokenId, txHash, contractAddress, chainId, explorerUrl }
@@ -26,10 +24,6 @@ import {
  * sign the `mint` transaction and send the NFT to the user's bound wallet.
  * The user never sees a mint signature prompt.
  */
-
-const bodySchema = z.object({
-  email: z.string().email(),
-});
 
 function parseCertKind(kind: string): "product" | "consultation" {
   return kind === "consultation" ? "consultation" : "product";
@@ -55,15 +49,10 @@ export async function POST(
       { status: 400 },
     );
   }
-
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { ok: false, error: "请求体必须是 { email }" },
-      { status: 400 },
-    );
+  const authUser = await getCurrentUser();
+  if (!authUser) {
+    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
   }
-  const { email } = parsed.data;
 
   const cert = await prisma.certificate.findUnique({
     where: { id: params.id },
@@ -76,7 +65,7 @@ export async function POST(
     );
   }
 
-  if (!cert.user || cert.user.email?.toLowerCase() !== email.toLowerCase()) {
+  if (!cert.user || cert.userId !== authUser.id) {
     return NextResponse.json(
       { ok: false, error: "当前邮箱与证书归属不一致" },
       { status: 403 },

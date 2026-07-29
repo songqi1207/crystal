@@ -8,10 +8,10 @@ import { WalletBindCard } from "./WalletBindCard";
  * `NEXT_PUBLIC_ENABLE_WEB3 === "true"`. Keeping both the provider stack and
  * the card in one module lets `next/dynamic` emit a single chunk.
  */
-export default function WalletBindMounted({ email }: { email: string }) {
+export default function WalletBindMounted() {
   return (
     <Web3Provider>
-      <WalletBindCard email={email} />
+      <WalletBindCard />
     </Web3Provider>
   );
 }

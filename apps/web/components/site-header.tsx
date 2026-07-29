@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Sparkles, User, ShoppingBag } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import { Logo } from "./logo";
+import { AuthStatus } from "./auth-status";
 
 const NAV = [
   { href: "/products", label: "水晶臻选", labelEn: "Crystals" },
@@ -40,13 +41,7 @@ export function SiteHeader() {
             <ShoppingBag className="h-4 w-4" />
             <span className="hidden sm:inline">购物袋</span>
           </Link>
-          <Link
-            href="/my"
-            className="flex items-center gap-2 rounded-full bg-starlight-500 px-4 py-2 text-sm font-medium text-night-900 hover:bg-starlight-400"
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>登录</span>
-          </Link>
+          <AuthStatus />
         </div>
       </div>
     </header>
